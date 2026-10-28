@@ -292,9 +292,9 @@
     .sheet-bar {
       /* ノッチやステータスバー、横向き時の左右の欠けに重ならないよう余白を取る */
       padding:
-        calc(10px + env(safe-area-inset-top))
+        calc(6px + env(safe-area-inset-top))
         calc(8px + env(safe-area-inset-right))
-        10px
+        6px
         calc(16px + env(safe-area-inset-left));
       border-bottom: 1px solid var(--line);
     }
@@ -313,15 +313,6 @@
       text-overflow: ellipsis;
     }
     .sheet-url span { font-weight: 400; color: var(--muted); }
-    .sheet-loc {
-      padding-right: 8px;
-      font-size: 12px;
-      color: var(--muted);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
     .icon-btn {
       width: 40px;
       height: 40px;
@@ -410,7 +401,6 @@
           </svg>
         </button>
       </div>
-      <p id="sheetLoc" class="sheet-loc" hidden></p>
     </div>
     <div class="sheet-body">
       <p id="frameNote" class="frame-note">読み込み中です。表示されない場合は「ブラウザで開く」を押してください。</p>
@@ -441,7 +431,6 @@
     const overlay = $('overlay');
     const sheet = $('sheet');
     const sheetUrl = $('sheetUrl');
-    const sheetLoc = $('sheetLoc');
     const frameNote = $('frameNote');
     const externalBtn = $('externalBtn');
     const closeBtn = $('closeBtn');
@@ -727,7 +716,6 @@
       // 位置が取れる前にQRを読み取っていた場合は、最初に取れた位置を読み取り結果に補う
       if (lastScan && !lastScan.location && sheet.classList.contains('open')) {
         lastScan.location = Object.assign({}, currentLocation);
-        showSheetLocation(lastScan.location);
       }
     }
 
@@ -834,7 +822,6 @@
 
       currentUrl = scan.url;
       renderSheetUrl(scan.url);
-      showSheetLocation(scan.location);
 
       loadFrame(scan.url);
       overlay.classList.add('open');
@@ -847,15 +834,6 @@
         history.pushState({ qrSheet: true }, '');
       }
       sheet.focus({ preventScroll: true }); // 一時タブ全体にフォーカス（ボタンに枠線が出ないように）
-    }
-
-    function showSheetLocation(loc) {
-      if (loc) {
-        sheetLoc.textContent = '読み取り地点 ' + formatCoords(loc) + '（' + formatAccuracy(loc.accuracy) + '）';
-        sheetLoc.hidden = false;
-      } else {
-        sheetLoc.hidden = true;
-      }
     }
 
     function closeSheet() {
