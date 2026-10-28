@@ -5,7 +5,968 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#F4F5F7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#131518" media="(prefers-color-scheme: dark)">
+  <meta name="<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F4F5F7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#131518" media="(prefers-color-scheme: dark)">
   <meta name="format-detection" content="telephone=no">
+  <title>QRコード読み取り</title>
+  <!-- QRデコードライブラリ jsQR -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" defer onerror="window.jsqrLoadFailed = true"></script>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #F4F5F7;
+      --surface: #FFFFFF;
+      --ink: #1D2125;
+      --muted: #636A72;
+      --line: #DDE1E5;
+      --accent: #1A66D2;
+      --ok: #18804A;
+      --danger: #C2312F;
+      --viewer: #1B1E22;
+      --radius: 14px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #131518;
+        --surface: #1D2024;
+        --ink: #E9EBEE;
+        --muted: #9BA2AA;
+        --line: #30353B;
+        --accent: #79AEFF;
+        --ok: #4FC98D;
+        --danger: #FF8A80;
+        --viewer: #000000;
+      }
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    * { margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    [hidden] { display: none !important; }
+
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Roboto, "Yu Gothic UI", Meiryo, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+    html.sheet-open, html.sheet-open body { overflow: hidden; }
+
+    main {
+      max-width: 480px;
+      margin: 0 auto;
+      padding:
+        calc(16px + env(safe-area-inset-top))
+        max(16px, env(safe-area-inset-right))
+        calc(24px + env(safe-area-inset-bottom))
+        max(16px, env(safe-area-inset-left));
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 4px 2px 0;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+      border: 0;
+      background: none;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* カメラ表示 */
+    .viewer {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: var(--viewer);
+      border-radius: var(--radius);
+      overflow: hidden;
+      isolation: isolate;
+      transform: translateZ(0); /* iOS で角丸から映像がはみ出すのを防ぐ */
+    }
+    @supports not (aspect-ratio: 1 / 1) {
+      .viewer::before { content: ""; display: block; padding-top: 100%; }
+    }
+    .viewer video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .guide {
+      position: absolute;
+      top: 17%;
+      left: 17%;
+      right: 17%;
+      bottom: 17%;
+      pointer-events: none;
+      --c: rgba(255, 255, 255, 0.92);
+      --len: 26px;
+      --w: 3px;
+      background:
+        linear-gradient(var(--c), var(--c)) left top / var(--len) var(--w) no-repeat,
+        linear-gradient(var(--c), var(--c)) left top / var(--w) var(--len) no-repeat,
+        linear-gradient(var(--c), var(--c)) right top / var(--len) var(--w) no-repeat,
+        linear-gradient(var(--c), var(--c)) right top / var(--w) var(--len) no-repeat,
+        linear-gradient(var(--c), var(--c)) left bottom / var(--len) var(--w) no-repeat,
+        linear-gradient(var(--c), var(--c)) left bottom / var(--w) var(--len) no-repeat,
+        linear-gradient(var(--c), var(--c)) right bottom / var(--len) var(--w) no-repeat,
+        linear-gradient(var(--c), var(--c)) right bottom / var(--w) var(--len) no-repeat;
+      filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.55)); /* 白い紙の上でも枠が見えるように */
+    }
+    .viewer-msg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      text-align: center;
+      color: #A9B0B8;
+      font-size: 14px;
+    }
+
+    /* ボタン */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 0 20px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .btn:active { opacity: 0.7; }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .btn-primary {
+      width: 100%;
+      background: var(--ink);
+      color: var(--bg);
+    }
+    .btn-primary.is-on {
+      background: transparent;
+      color: var(--ink);
+      box-shadow: inset 0 0 0 1.5px var(--line);
+    }
+    .btn-small {
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--ink);
+      box-shadow: inset 0 0 0 1px var(--line);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .status {
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--muted);
+      white-space: pre-line;
+      padding: 0 2px;
+    }
+    .status.is-error { color: var(--danger); }
+    .panel .status { padding: 0; }
+
+    /* 位置情報 */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .panel h2 {
+      font-size: 15px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--line);
+      transition: background-color 0.2s;
+    }
+    .dot.is-live { background: var(--ok); }
+    .loc-value {
+      font-size: 18px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.01em;
+      word-break: break-all;
+    }
+    .loc-value.is-empty {
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--muted);
+    }
+    .loc-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 2px 14px;
+      font-size: 13px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .loc-meta a {
+      margin-left: auto;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .link-btn {
+      align-self: center;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    /* 一時タブ（ボトムシート） */
+    .overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s, visibility 0s linear 0.25s;
+      z-index: 10;
+    }
+    .overlay.open {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.25s;
+    }
+    .sheet {
+      /* 画面いっぱいに表示（上下左右を画面の端に合わせる） */
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding-bottom: env(safe-area-inset-bottom);
+      transform: translateY(100%);
+      visibility: hidden;
+      transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 0.3s;
+      z-index: 11;
+    }
+    .sheet:focus { outline: none; }
+    .sheet.open {
+      transform: none;
+      visibility: visible;
+      transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .sheet-bar {
+      /* ノッチやステータスバー、横向き時の左右の欠けに重ならないよう余白を取る */
+      padding:
+        calc(10px + env(safe-area-inset-top))
+        calc(8px + env(safe-area-inset-right))
+        10px
+        calc(16px + env(safe-area-inset-left));
+      border-bottom: 1px solid var(--line);
+    }
+    .sheet-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sheet-url {
+      flex: 1;
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sheet-url span { font-weight: 400; color: var(--muted); }
+    .sheet-loc {
+      padding-right: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      color: var(--ink);
+    }
+    .icon-btn:active { background: var(--bg); }
+    .sheet-body {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      background: #FFFFFF;
+    }
+    .frame-note {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      text-align: center;
+      font-size: 13px;
+      color: #6B7178;
+    }
+    .sheet-body iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .overlay, .overlay.open, .sheet, .sheet.open, .btn, .dot { transition: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <main>
+    <h1>QRコード読み取り</h1>
+
+    <div id="viewer" class="viewer">
+      <video id="video" playsinline webkit-playsinline muted autoplay></video>
+      <div id="guide" class="guide" hidden></div>
+      <p id="viewerMsg" class="viewer-msg">カメラを起動して、QRコードを枠の中に写してください</p>
+    </div>
+
+    <button id="camBtn" class="btn btn-primary" type="button">カメラを起動</button>
+    <p id="camStatus" class="status" role="status" aria-live="polite" hidden></p>
+
+    <section class="panel" aria-labelledby="locTitle">
+      <h2 id="locTitle"><span id="locDot" class="dot" aria-hidden="true"></span>位置情報</h2>
+      <p id="locValue" class="loc-value is-empty">カメラを起動すると取得します</p>
+      <div id="locMeta" class="loc-meta" hidden>
+        <span id="locAcc"></span>
+        <span id="locTime"></span>
+        <a id="locMap" href="#" target="_blank" rel="noopener noreferrer">地図で開く</a>
+      </div>
+      <p id="locStatus" class="status" role="status" aria-live="polite" hidden></p>
+    </section>
+
+    <button id="testBtn" class="link-btn" type="button">テスト用ページを開く</button>
+  </main>
+
+  <canvas id="canvas" hidden></canvas>
+
+  <!-- 一時タブ（ボトムシート） -->
+  <div id="overlay" class="overlay"></div>
+  <div id="sheet" class="sheet" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sheetUrl" aria-hidden="true">
+    <div class="sheet-bar">
+      <div class="sheet-row">
+        <p id="sheetUrl" class="sheet-url"></p>
+        <button id="externalBtn" class="btn btn-small" type="button">ブラウザで開く</button>
+        <button id="closeBtn" class="icon-btn" type="button" aria-label="閉じる">
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
+          </svg>
+        </button>
+      </div>
+      <p id="sheetLoc" class="sheet-loc" hidden></p>
+    </div>
+    <div class="sheet-body">
+      <p id="frameNote" class="frame-note">読み込み中です。表示されない場合は「ブラウザで開く」を押してください。</p>
+      <iframe id="frame" title="読み取ったページ" src="about:blank" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const video = $('video');
+    const canvas = $('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const camBtn = $('camBtn');
+    const camStatus = $('camStatus');
+    const guide = $('guide');
+    const viewerMsg = $('viewerMsg');
+
+    const viewer = $('viewer');
+    const locDot = $('locDot');
+    const locValue = $('locValue');
+    const locMeta = $('locMeta');
+    const locAcc = $('locAcc');
+    const locTime = $('locTime');
+    const locMap = $('locMap');
+    const locStatus = $('locStatus');
+
+    const overlay = $('overlay');
+    const sheet = $('sheet');
+    const sheetUrl = $('sheetUrl');
+    const sheetLoc = $('sheetLoc');
+    const frameNote = $('frameNote');
+    const externalBtn = $('externalBtn');
+    const closeBtn = $('closeBtn');
+    const testBtn = $('testBtn');
+
+    // 端末の判定（エラー時の案内文を出し分けるためだけに使用）
+    const ua = navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    const isAndroid = /Android/.test(ua);
+    const isInApp = /Line\/|FBAN|FBAV|Instagram|Twitter|MicroMessenger/i.test(ua);
+
+    function setStatus(el, text, isError) {
+      el.textContent = text || '';
+      el.hidden = !text;
+      el.classList.toggle('is-error', !!isError);
+    }
+
+    function inAppHint() {
+      return isInApp ? '\nLINE などのアプリ内ブラウザでは使えないことがあります。Safari または Chrome で開いてください。' : '';
+    }
+
+    /* ========== カメラ・QR読み取り ========== */
+
+    const DECODE_INTERVAL = 100; // ms：解析の間隔（低スペック端末の負荷軽減）
+    const DECODE_MAX_SIZE = 720; // px：解析用に縮小する長辺サイズ
+
+    let stream = null;
+    let scanning = false;
+    let rafId = 0;
+    let lastDecodeAt = 0;
+    let ignoreUrl = '';
+    let ignoreUntil = 0;
+    let noteTimer = 0;
+    let startToken = 0; // 起動処理の途中で停止されたかを判別するための番号
+
+    // カメラを起動する。起動できたら true を返す
+    async function startCamera() {
+      setStatus(camStatus, '');
+      if (!window.isSecureContext) {
+        setStatus(camStatus, 'カメラは HTTPS のページでのみ使えます。URL が https:// で始まっているか確認してください。', true);
+        return false;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus(camStatus, 'このブラウザではカメラを使えません。' + inAppHint(), true);
+        return false;
+      }
+
+      const token = ++startToken;
+      camBtn.disabled = true; // 連打で二重に起動しないようにする
+      try {
+        if (!(await waitForJsQR())) {
+          setStatus(camStatus, 'QRコードの読み取り機能を読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。', true);
+          return false;
+        }
+
+        const s = await openCameraStream();
+        if (token !== startToken) { // 起動の途中で停止された
+          s.getTracks().forEach((t) => t.stop());
+          return false;
+        }
+        stream = s;
+        video.srcObject = s;
+        try {
+          await video.play();
+        } catch (playErr) {
+          // 省電力モードなどで再生が止められた場合でも、カメラ自体は使えるので続行する
+          console.warn(playErr);
+        }
+        if (token !== startToken) return false;
+
+        // 確認画面の間に別のアプリへ移った場合は止める
+        if (document.hidden) {
+          stopCamera('画面を離れたため、カメラを停止しました。');
+          return false;
+        }
+
+        const track = s.getVideoTracks()[0];
+        if (track) {
+          track.addEventListener('ended', () => {
+            if (stream === s) stopCamera('カメラが停止しました。もう一度起動してください。');
+          });
+        }
+
+        viewerMsg.hidden = true;
+        guide.hidden = false;
+        camBtn.textContent = 'カメラを停止';
+        camBtn.classList.add('is-on');
+        if (video.paused) setStatus(camStatus, '映像が表示されない場合は、カメラの枠をタップしてください。');
+        startLoop();
+        return true;
+      } catch (err) {
+        if (token !== startToken) return false;
+        console.error(err);
+        stopCamera();
+        setStatus(camStatus, cameraErrorMessage(err), true);
+        return false;
+      } finally {
+        camBtn.disabled = false;
+      }
+    }
+
+    // jsQR の読み込みを待つ（通信が遅いと、カメラ起動時にまだ読み込み中のことがある）
+    function waitForJsQR(timeoutMs) {
+      timeoutMs = timeoutMs || 10000;
+      return new Promise((resolve) => {
+        if (typeof jsQR === 'function') return resolve(true);
+        if (window.jsqrLoadFailed) return resolve(false);
+        setStatus(camStatus, '読み取りの準備をしています…');
+        const startedAt = Date.now();
+        const timer = setInterval(() => {
+          if (typeof jsQR === 'function' || window.jsqrLoadFailed || Date.now() - startedAt > timeoutMs) {
+            clearInterval(timer);
+            setStatus(camStatus, '');
+            resolve(typeof jsQR === 'function');
+          }
+        }, 100);
+      });
+    }
+
+    // 背面カメラを優先し、対応していない端末では条件をゆるめて再試行
+    async function openCameraStream() {
+      const attempts = [
+        { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+        { video: { facingMode: 'environment' }, audio: false },
+        { video: true, audio: false }
+      ];
+      let lastError;
+      for (const constraints of attempts) {
+        try {
+          return await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+          lastError = err;
+          if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) break;
+        }
+      }
+      throw lastError;
+    }
+
+    function stopCamera(message) {
+      startToken++; // 起動処理の途中なら、その結果を破棄させる
+      scanning = false;
+      cancelAnimationFrame(rafId);
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+      }
+      video.pause();
+      video.srcObject = null;
+      guide.hidden = true;
+      viewerMsg.hidden = false;
+      camBtn.textContent = 'カメラを起動';
+      camBtn.classList.remove('is-on');
+      setStatus(camStatus, message || '');
+      stopLocation(); // 位置情報もカメラと一緒に止める（最後に取れた値は表示したまま）
+    }
+
+    function cameraErrorMessage(err) {
+      const name = err && err.name;
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        if (isIOS) return 'カメラが許可されていません。設定アプリで、使用中のブラウザ（Safari など）のカメラを「許可」または「確認」にしてから、もう一度起動してください。' + inAppHint();
+        if (isAndroid) return 'カメラが許可されていません。アドレスバー左のアイコン（サイト設定）でカメラを「許可」にしてから、もう一度起動してください。' + inAppHint();
+        return 'カメラが許可されていません。ブラウザのサイト設定でカメラを許可してください。';
+      }
+      if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'DevicesNotFoundError') {
+        return 'カメラが見つかりませんでした。';
+      }
+      if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') {
+        return 'カメラを開けませんでした。ほかのアプリがカメラを使っていないか確認してください。';
+      }
+      return 'カメラを起動できませんでした。' + inAppHint();
+    }
+
+    function startLoop() {
+      cancelAnimationFrame(rafId);
+      scanning = true;
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function tick(now) {
+      if (!scanning) return;
+      rafId = requestAnimationFrame(tick);
+
+      if (now - lastDecodeAt < DECODE_INTERVAL) return;
+      if (video.readyState < 2 || !video.videoWidth) return;
+      lastDecodeAt = now;
+
+      const scale = Math.min(1, DECODE_MAX_SIZE / Math.max(video.videoWidth, video.videoHeight));
+      const w = Math.round(video.videoWidth * scale);
+      const h = Math.round(video.videoHeight * scale);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      ctx.drawImage(video, 0, 0, w, h);
+      const code = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
+      if (!code || !code.data) return;
+
+      const text = code.data.trim();
+      if (!isHttpUrl(text)) {
+        showCamNote('URL ではない QRコードです。');
+        return;
+      }
+      // 閉じた直後に同じQRを再読み取りしないよう少し待つ
+      if (text === ignoreUrl && Date.now() < ignoreUntil) return;
+
+      scanning = false;
+      cancelAnimationFrame(rafId);
+      if (navigator.vibrate) navigator.vibrate(60); // Android のみ（iOS は非対応）
+      handleScan(text);
+    }
+
+    function showCamNote(text) {
+      if (camStatus.textContent !== text) setStatus(camStatus, text);
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => {
+        if (camStatus.textContent === text) setStatus(camStatus, '');
+      }, 2500);
+    }
+
+    function isHttpUrl(str) {
+      try {
+        const url = new URL(str);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+      } catch (_) {
+        return false;
+      }
+    }
+
+    /* ========== 位置情報 ========== */
+
+    let watchId = null;
+    let highAccuracy = true;
+    let currentLocation = null; // { latitude, longitude, accuracy, updatedAt }
+
+    function startLocation() {
+      setStatus(locStatus, '');
+      if (!window.isSecureContext) {
+        setStatus(locStatus, '位置情報は HTTPS のページでのみ取得できます。', true);
+        return;
+      }
+      if (!('geolocation' in navigator)) {
+        setStatus(locStatus, 'このブラウザは位置情報に対応していません。', true);
+        return;
+      }
+      clearWatch();
+      watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
+        enableHighAccuracy: highAccuracy,
+        timeout: highAccuracy ? 15000 : 30000,
+        maximumAge: 10000
+      });
+      if (!currentLocation) {
+        locValue.textContent = '取得中…';
+      } else {
+        locDot.classList.add('is-live');
+      }
+    }
+
+    function stopLocation() {
+      clearWatch();
+      highAccuracy = true;
+      locDot.classList.remove('is-live');
+      if (!currentLocation) locValue.textContent = 'カメラを起動すると取得します';
+    }
+
+    function clearWatch() {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+    }
+
+    function onPosition(pos) {
+      const c = pos.coords;
+      currentLocation = {
+        latitude: c.latitude,
+        longitude: c.longitude,
+        accuracy: c.accuracy,
+        updatedAt: Date.now()
+      };
+      renderLocation();
+      setStatus(locStatus, lowAccuracyHint(c.accuracy));
+
+      // 位置が取れる前にQRを読み取っていた場合は、最初に取れた位置を読み取り結果に補う
+      if (lastScan && !lastScan.location && sheet.classList.contains('open')) {
+        lastScan.location = Object.assign({}, currentLocation);
+        showSheetLocation(lastScan.location);
+      }
+    }
+
+    function onPositionError(err) {
+      // 取得済みなら、一時的な取得失敗・時間切れは無視して直前の値を使い続ける
+      if (currentLocation && (err.code === 2 || err.code === 3)) return;
+      // GPS で取れない端末や屋内では、通常精度に切り替えて取り直す
+      if (highAccuracy && (err.code === 2 || err.code === 3)) {
+        highAccuracy = false;
+        startLocation();
+        return;
+      }
+      stopLocation();
+      if (!currentLocation) locValue.textContent = '取得できませんでした';
+      setStatus(locStatus, locationErrorMessage(err), true);
+    }
+
+    function locationErrorMessage(err) {
+      if (err.code === 1) { // PERMISSION_DENIED
+        if (isIOS) return '位置情報が許可されていません。次の2点を確認してから、カメラを起動し直してください。\n・「設定 ＞ プライバシーとセキュリティ ＞ 位置情報サービス」がオンで、使用中のブラウザ（Safari は「Safari Webサイト」）が「使用中のみ許可」\n・設定アプリの Safari（または使用中のブラウザ）の「位置情報」が「拒否」になっていない' + inAppHint();
+        if (isAndroid) return '位置情報が許可されていません。端末の位置情報をオンにし、アドレスバー左のアイコン（サイト設定）で位置情報を「許可」にしてから、カメラを起動し直してください。確認画面を何度か閉じると、Chrome が自動でブロックすることがあります。' + inAppHint();
+        return '位置情報が許可されていません。ブラウザのサイト設定で位置情報を許可してから、カメラを起動し直してください。';
+      }
+      if (err.code === 2) { // POSITION_UNAVAILABLE
+        return '現在地を特定できませんでした。端末の位置情報がオンになっているか確認し、屋外や窓際でカメラを起動し直してください。';
+      }
+      if (err.code === 3) { // TIMEOUT
+        return '位置情報の取得に時間がかかりすぎました。電波の良い場所で、カメラを起動し直してください。';
+      }
+      return '位置情報を取得できませんでした。';
+    }
+
+    function lowAccuracyHint(meters) {
+      if (!(meters > 1000)) return '';
+      if (isIOS) return '精度が低いときは「設定 ＞ プライバシーとセキュリティ ＞ 位置情報サービス」で、使用中のブラウザの「正確な位置情報」をオンにしてください。';
+      if (isAndroid) return '精度が低いときは、端末の設定でブラウザの位置情報を「正確な位置情報を使用」にしてください。';
+      return '';
+    }
+
+    function renderLocation() {
+      const l = currentLocation;
+      locValue.classList.remove('is-empty');
+      locValue.textContent = formatCoords(l);
+      locAcc.textContent = '精度 ' + formatAccuracy(l.accuracy);
+      locTime.textContent = formatTime(l.updatedAt) + ' 更新';
+      locMap.href = 'https://www.google.com/maps/search/?api=1&query=' + l.latitude + ',' + l.longitude;
+      locMeta.hidden = false;
+      locDot.classList.toggle('is-live', watchId !== null);
+    }
+
+    function formatCoords(l) {
+      return l.latitude.toFixed(6) + ', ' + l.longitude.toFixed(6);
+    }
+
+    function formatAccuracy(m) {
+      if (!isFinite(m)) return '不明';
+      return m >= 1000 ? '±' + (m / 1000).toFixed(1) + 'km' : '±' + Math.round(m) + 'm';
+    }
+
+    function formatTime(ms) {
+      return new Date(ms).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    /* ========== 読み取り結果の処理 ========== */
+
+    let lastScan = null;
+
+    // QRコードを読み取ったときに呼ばれます。
+    // サーバーへの送信など独自の処理を加える場合は、ここに追加してください。
+    function handleScan(url) {
+      lastScan = {
+        url: url,
+        scannedAt: new Date().toISOString(),
+        location: currentLocation ? Object.assign({}, currentLocation) : null // 位置情報が未取得なら null
+      };
+      openSheet(lastScan);
+    }
+
+    /* ========== 一時タブ（ボトムシート） ========== */
+
+    // 一時タブ内で位置情報の利用を許可するサイト（ドメイン）。
+    // ブラウザは、埋め込んだ別サイトの位置情報利用を初期状態で禁止しているため、
+    // ここに書いたドメイン（とそのサブドメイン）のページにだけ利用を許可します。
+    // FormBridge のURLが別のドメインの場合や、短縮URLを使う場合は、そのドメインを追加してください。
+    const LOCATION_ALLOWED_HOSTS = [
+      'form.kintoneapp.com' // FormBridge（例: https://xxxx.form.kintoneapp.com/public/...）
+    ];
+
+    let currentUrl = '';
+
+    function isLocationAllowed(url) {
+      try {
+        const host = new URL(url).hostname;
+        return LOCATION_ALLOWED_HOSTS.some((h) => host === h || host.endsWith('.' + h));
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function openSheet(scan) {
+      // 一時タブを開いている間は読み取りを止める（テスト用リンクから開いた場合も含む）
+      scanning = false;
+      cancelAnimationFrame(rafId);
+
+      currentUrl = scan.url;
+      renderSheetUrl(scan.url);
+      showSheetLocation(scan.location);
+
+      loadFrame(scan.url);
+      overlay.classList.add('open');
+      sheet.classList.add('open');
+      sheet.setAttribute('aria-hidden', 'false');
+      document.documentElement.classList.add('sheet-open');
+
+      // Android の戻るボタン／iOS のスワイプで閉じられるよう履歴を1つ積む
+      if (!(history.state && history.state.qrSheet)) {
+        history.pushState({ qrSheet: true }, '');
+      }
+      sheet.focus({ preventScroll: true }); // 一時タブ全体にフォーカス（ボタンに枠線が出ないように）
+    }
+
+    function showSheetLocation(loc) {
+      if (loc) {
+        sheetLoc.textContent = '読み取り地点 ' + formatCoords(loc) + '（' + formatAccuracy(loc.accuracy) + '）';
+        sheetLoc.hidden = false;
+      } else {
+        sheetLoc.hidden = true;
+      }
+    }
+
+    function closeSheet() {
+      if (!sheet.classList.contains('open')) return;
+      // 非表示にする一時タブの中にフォーカスを残さない
+      if (sheet.contains(document.activeElement)) document.activeElement.blur();
+      overlay.classList.remove('open');
+      sheet.classList.remove('open');
+      sheet.setAttribute('aria-hidden', 'true');
+      document.documentElement.classList.remove('sheet-open');
+      loadFrame('about:blank');
+
+      ignoreUrl = currentUrl;
+      ignoreUntil = Date.now() + 2500;
+      if (stream) startLoop(); // カメラ起動中なら読み取りを再開
+    }
+
+    // iframe を差し替えて読み込む（src の書き換えだと戻るボタンの履歴が増えるため）
+    function loadFrame(url) {
+      const old = $('frame');
+      const next = old.cloneNode(false);
+      // 許可したサイトのときだけ、埋め込み先に位置情報の利用を許可する（src より前に設定する）
+      if (isLocationAllowed(url)) next.setAttribute('allow', 'geolocation *');
+      else next.removeAttribute('allow');
+      next.src = url;
+      frameNote.hidden = url === 'about:blank';
+      next.addEventListener('load', () => {
+        if (url !== 'about:blank') frameNote.hidden = true; // 読み込み後は案内を隠す
+      });
+      old.parentNode.replaceChild(next, old);
+    }
+
+    function renderSheetUrl(url) {
+      sheetUrl.textContent = '';
+      sheetUrl.title = url;
+      try {
+        const u = new URL(url);
+        let rest = u.pathname + u.search;
+        try { rest = decodeURI(rest); } catch (_) {}
+        if (rest === '/') rest = '';
+        sheetUrl.appendChild(document.createTextNode(u.host));
+        if (rest) {
+          const span = document.createElement('span');
+          span.textContent = rest;
+          sheetUrl.appendChild(span);
+        }
+      } catch (_) {
+        sheetUrl.textContent = url;
+      }
+    }
+
+    /* ========== イベント ========== */
+
+    camBtn.addEventListener('click', () => {
+      if (stream) stopCamera();
+      else startCameraAndLocation();
+    });
+
+    // 「カメラを起動」で位置情報も自動で取得する（カメラを止めると位置情報も止まる）。
+    // 確認画面が重ならないよう、カメラの起動が終わってから位置情報を取得する。
+    // ここでこのサイトの位置情報が許可されると、一時タブ内の FormBridge でも使えるようになる。
+    async function startCameraAndLocation() {
+      const started = await startCamera();
+      if (started && watchId === null) {
+        highAccuracy = true;
+        startLocation();
+      }
+    }
+
+    // 自動再生が止められて映像が動かないときは、枠のタップで再生する
+    viewer.addEventListener('click', () => {
+      if (stream && video.paused) {
+        video.play().then(() => setStatus(camStatus, '')).catch(() => {});
+      }
+    });
+
+    closeBtn.addEventListener('click', closeSheet);
+    overlay.addEventListener('click', closeSheet);
+    window.addEventListener('popstate', closeSheet);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeSheet();
+    });
+
+    externalBtn.addEventListener('click', () => {
+      if (currentUrl) window.open(currentUrl, '_blank', 'noopener,noreferrer');
+    });
+
+    testBtn.addEventListener('click', () => {
+      handleScan('https://ja.wikipedia.org/wiki/メインページ');
+    });
+
+    // 画面を離れたらカメラを止める（iOS は復帰時に映像が止まるため）
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && stream) stopCamera('画面を離れたため、カメラを停止しました。');
+    });
+
+    // 初期チェック
+    if (!window.isSecureContext) {
+      setStatus(camStatus, 'このページは HTTPS で開いてください。HTTP ではカメラと位置情報を使えません。', true);
+    }
+  </script>
+</body>
+</html>
+format-detection" content="telephone=no">
   <title>QRコード読み取り</title>
   <!-- QRデコードライブラリ jsQR -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" defer onerror="window.jsqrLoadFailed = true"></script>
